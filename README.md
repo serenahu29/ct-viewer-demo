@@ -36,6 +36,25 @@ ct-viewer-demo/
 └─ README.md            # This file
 ```
 
+##  Setup Instructions
+
+To run the viewer locally:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/serenahu29/ct-viewer-demo.git
+   cd ct-viewer-demo
+   ```
+2. Install dependencies
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the app
+   ```bash
+   streamlit run app.py
+   ```
+  
+   
 
 
 ## Live Demo
@@ -48,7 +67,6 @@ ct-viewer-demo/
 - Use the **Axial slice** slider to navigate through the CT volume.
 - Adjust **Window Min** and **Window Max** to fine‑tune brightness and contrast.
 - Select one or more **Overlay masks** from the multiselect dropdown to see per‑voxel annotations.
-
 
 
 ## Deployment
