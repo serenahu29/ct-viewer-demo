@@ -20,6 +20,11 @@ if SEG_DIR.exists():
 else:
     seg_files = []
 
+# ——— Correct mask name extraction ——————————————————————
+# Strip the full ".nii.gz" so names are "stomach", "liver", etc.
+mask_names = [p.name[:-len(".nii.gz")] for p in seg_files]
+overlay    = st.sidebar.multiselect("Overlay masks", mask_names)
+
 # ——— Load CT Volume ————————————————————————————————
 try:
     ct_vol = nib.load(str(CT_PATH)).get_fdata()
@@ -45,10 +50,7 @@ vmax = st.sidebar.slider(
     float(np.percentile(ct_vol, 99)),
 )
 
-mask_names = [p.stem for p in seg_files]
-overlay = st.sidebar.multiselect("Overlay masks", mask_names)
-
-st.sidebar.markdown(f"Volume shape: {ct_vol.shape}")
+st.sidebar.markdown(f"**Volume shape:** {ct_vol.shape}")
 
 # ——— Prepare Slice ————————————————————————————————
 slice_raw  = ct_vol[:, :, slice_idx]
@@ -70,4 +72,5 @@ for name in overlay:
 
 ax.set_title(f"Axial slice {slice_idx}")
 ax.axis("off")
+
 st.pyplot(fig, use_container_width=True)
