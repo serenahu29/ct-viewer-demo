@@ -5,33 +5,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# ——— Page config ——————————————————————————————————————
-st.set_page_config(page_title="Axial CT Viewer", layout="wide")
-st.title("🩻 Axial CT + Mask Viewer")
-
-# ——— Paths —————————————————————————————————————————
+# ——— Setup —————————————————————————————————————————————
 BASE_DIR = pathlib.Path(__file__).parent
 CT_PATH  = BASE_DIR / "ct.nii.gz"
-MASK_DIR = BASE_DIR / "segmentations"
+SEG_DIR  = BASE_DIR / "segmentations"
 
-# ——— Load volumes (cached) —————————————————————————————
-@st.cache_data
-def load_data():
+# ——— Sidebar Debug Info ——————————————————————————————
+st.sidebar.markdown("## 🔍 Debug Info")
+st.sidebar.write("CT exists:", CT_PATH.exists())
+st.sidebar.write("Segmentation dir exists:", SEG_DIR.exists())
+if SEG_DIR.exists():
+    seg_files = sorted(SEG_DIR.glob("*.nii.gz"))
+    st.sidebar.write("Masks found:", [p.name for p in seg_files])
+else:
+    seg_files = []
+
+# ——— Load CT Volume ————————————————————————————————
+try:
     ct_vol = nib.load(str(CT_PATH)).get_fdata()
-    masks  = {}
-    for fname in sorted(os.listdir(MASK_DIR)):
-        if fname.endswith(".nii.gz"):
-            key = pathlib.Path(fname).stem
-            masks[key] = nib.load(str(MASK_DIR / fname)).get_fdata()
-    return ct_vol, masks
+    _, _, nz = ct_vol.shape
+except Exception as e:
+    st.error(f"❌ Failed to load CT volume:\n{e}")
+    st.stop()
 
-ct_vol, masks = load_data()
-_, _, nz = ct_vol.shape
+# ——— Sidebar Controls ——————————————————————————————
+st.title("🩻 Axial CT + Mask Viewer")
+slice_idx = st.sidebar.slider("Axial slice (Z)", 0, nz - 1, nz // 2)
 
-# ——— Sidebar controls ———————————————————————————————————
-slice_ax = st.sidebar.slider("Axial slice (Z)", 0, nz - 1, nz // 2)
-
-st.sidebar.header("Window / Level")
 vmin = st.sidebar.slider(
     "Window Min",
     float(ct_vol.min()),
@@ -45,32 +45,29 @@ vmax = st.sidebar.slider(
     float(np.percentile(ct_vol, 99)),
 )
 
-overlay_names = st.sidebar.multiselect(
-    "Overlay masks", options=list(masks.keys()), default=[]
-)
-st.sidebar.markdown(f"**Volume shape:** {ct_vol.shape}")
+mask_names = [p.stem for p in seg_files]
+overlay = st.sidebar.multiselect("Overlay masks", mask_names)
 
-# ——— Extract and normalize the axial slice —————————————————————
-slice_raw  = ct_vol[:, :, slice_ax]
+st.sidebar.markdown(f"Volume shape: {ct_vol.shape}")
+
+# ——— Prepare Slice ————————————————————————————————
+slice_raw  = ct_vol[:, :, slice_idx]
 slice_norm = np.clip((slice_raw - vmin) / (vmax - vmin), 0, 1).T
 
-# ——— Plot the axial view —————————————————————————————————
+# ——— Plotting with On‑Demand Mask Loading ———————————————————
 fig, ax = plt.subplots(figsize=(6, 6))
 ax.imshow(slice_norm, cmap="gray", origin="lower")
 
-for name in overlay_names:
-    mask_slice = masks[name][:, :, slice_ax].T
-    ax.imshow(
-        mask_slice,
-        cmap="jet",
-        alpha=0.4,
-        origin="lower",
-        vmin=0,
-        vmax=1,
-        interpolation="none",
-    )
+for name in overlay:
+    mask_path = SEG_DIR / f"{name}.nii.gz"
+    try:
+        mask_vol   = nib.load(str(mask_path)).get_fdata()
+        mask_slice = mask_vol[:, :, slice_idx].T
+        ax.imshow(mask_slice, cmap="jet", alpha=0.4, origin="lower")
+    except Exception as e:
+        st.error(f"❌ Failed to load/overlay mask '{name}': {e}")
+        st.stop()
 
-ax.set_title(f"Axial slice {slice_ax}")
+ax.set_title(f"Axial slice {slice_idx}")
 ax.axis("off")
-
 st.pyplot(fig, use_container_width=True)
