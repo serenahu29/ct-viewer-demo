@@ -4,7 +4,7 @@ This repository contains a web‑based CT viewer application built with **Stream
 
 ---
 
-## 🚀 Features
+## Features
 
 - **Axial slice navigation**: scroll through CT slices with a slider.
 - **Window/level controls**: adjust contrast and brightness in real time.
@@ -13,8 +13,16 @@ This repository contains a web‑based CT viewer application built with **Stream
 - **One‑click deployment**: live demo available on Streamlit Cloud.
 
 ---
+## Preview
+Inital view
+<img width="1512" alt="demo" src="https://github.com/user-attachments/assets/22421e21-a3d3-4b6a-a58f-136ca12f3246" />
 
-## 📂 Repository Structure
+Mask overlay
+<img width="1512" alt="Screenshot 2025-04-20 at 2 02 26 AM" src="https://github.com/user-attachments/assets/583a49fe-e77e-4ecd-b99d-90eb0e7ce6ad" />
+
+---
+
+## Repository Structure
 
 ```
 ct-viewer-demo/
@@ -30,13 +38,13 @@ ct-viewer-demo/
 
 ---
 
-## ☁️ Live Demo
+## Live Demo
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/serenahu29/ct-viewer-demo/main/app.py)
 
 ---
 
-## 📝 Usage
+## Usage
 
 - Use the **Axial slice** slider to navigate through the CT volume.
 - Adjust **Window Min** and **Window Max** to fine‑tune brightness and contrast.
@@ -44,7 +52,7 @@ ct-viewer-demo/
 
 ---
 
-## 🚩 Deployment
+## Deployment
 
 This app is hosted on Streamlit Cloud.
 
