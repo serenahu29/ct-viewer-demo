@@ -34,13 +34,22 @@ st.sidebar.markdown("""
 ### Annotation Guide
 1. Choose annotation mode:
    - Free Draw: Draw freely
-   - Polygon: Click to create a polygon
    - Rectangle: Drag to create a rectangle
 2. Adjust brush size
 3. Click 'Save Annotation'
 4. 'Clear Canvas' to reset
 5. Adjust opacity to view underlying CT
 """)
+
+# Add Reset All button
+if st.sidebar.button("Reset All Annotations", type="primary"):
+    # Delete all annotation files
+    for file in ANNOT_DIR.glob("annotation_slice_*.npy"):
+        file.unlink()
+    st.sidebar.success("All annotations have been cleared!")
+    # Reset session state
+    st.session_state.last_saved_slice = None
+    st.rerun()
 
 # List annotated slices
 annotated_slices = sorted([
@@ -76,7 +85,7 @@ if annotated_slices:
             st.rerun()
 
 # Mode, slice, window, overlays
-annotation_mode = st.sidebar.radio("Mode", ["Free Draw","Polygon","Rectangle"], index=0)
+annotation_mode = st.sidebar.radio("Mode", ["Free Draw", "Rectangle"], index=0)
 st.session_state.slice_idx = st.sidebar.slider("Slice Z",0,nz-1,st.session_state.slice_idx)
 vmin = st.sidebar.slider("Window Min", float(ct_vol.min()), float(ct_vol.max()), float(np.percentile(ct_vol,1)))
 vmax = st.sidebar.slider("Window Max", float(ct_vol.min()), float(ct_vol.max()), float(np.percentile(ct_vol,99)))
@@ -93,7 +102,7 @@ slice_pil = Image.fromarray(slice_img)
 
 # Canvas
 brush = st.sidebar.slider("Brush Size",1,50,10)
-drawing_mode = {"Free Draw":"freedraw","Polygon":"polygon","Rectangle":"rect"}[annotation_mode]
+drawing_mode = {"Free Draw":"freedraw","Rectangle":"rect"}[annotation_mode]
 canvas = st_canvas(
     fill_color="rgba(255,0,0,0.3)",
     stroke_width=brush,
@@ -113,9 +122,16 @@ with c1:
         for obj in canvas.json_data["objects"]:
             t = obj.get("type")
             if t == "path":
-                pts = np.array(obj.get("path",[]),dtype=np.int32)
-                if pts.shape[0]>1:
-                    cv2.polylines(mask,[pts],False,1,brush)
+                path_data = obj.get("path", [])
+                if isinstance(path_data, list) and len(path_data) >= 2:
+                    # Convert path points to numpy array, ensuring consistent dimensions
+                    pts = []
+                    for point in path_data:
+                        if isinstance(point, (list, tuple)) and len(point) == 2:
+                            pts.append([int(point[0]), int(point[1])])
+                    if pts:
+                        pts = np.array(pts, dtype=np.int32)
+                        cv2.polylines(mask, [pts], False, 1, brush)
             elif t == "polygon":
                 pts = np.array(obj.get("points",[]),dtype=np.int32)
                 if pts.shape[0]>=3:
@@ -135,6 +151,17 @@ with c1:
             st.rerun()
 with c2:
     if st.button("Clear Canvas"):
+        # Clear the canvas data
+        if canvas.json_data and 'objects' in canvas.json_data:
+            canvas.json_data['objects'] = []
+        
+        # Remove saved annotation file if it exists
+        annotation_file = ANNOT_DIR / f"annotation_slice_{st.session_state.slice_idx}.npy"
+        if annotation_file.exists():
+            annotation_file.unlink()
+            st.success(f"Cleared annotation for slice {st.session_state.slice_idx}")
+        
+        # Generate new canvas key to ensure clean state
         st.session_state.canvas_key = str(np.random.randint(0,1e6))
         st.rerun()
 
@@ -157,9 +184,16 @@ if canvas.json_data and 'objects' in canvas.json_data:
         try:
             t = obj.get('type')
             if t == 'path':
-                pts = np.array(obj.get('path',[]),dtype=np.int32)
-                if len(pts) >= 2:
-                    cv2.polylines(cm,[pts],False,1,brush)
+                path_data = obj.get('path', [])
+                if isinstance(path_data, list) and len(path_data) >= 2:
+                    # Convert path points to numpy array, ensuring consistent dimensions
+                    pts = []
+                    for point in path_data:
+                        if isinstance(point, (list, tuple)) and len(point) == 2:
+                            pts.append([int(point[0]), int(point[1])])
+                    if pts:
+                        pts = np.array(pts, dtype=np.int32)
+                        cv2.polylines(cm, [pts], False, 1, brush)
             elif t == 'polygon':
                 pts = np.array(obj.get('points',[]),dtype=np.int32)
                 if len(pts) >= 3:
