@@ -1,4 +1,11 @@
-streamlit
+streamlit==1.31.1
 nibabel
 matplotlib
 numpy
+streamlit-drawable-canvas==0.9.3
+Pillow
+opencv-python
+nninteractive
+napari
+torch
+torchvision
