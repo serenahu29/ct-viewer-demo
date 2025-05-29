@@ -4,9 +4,7 @@ import nibabel as nib
 import numpy as np
 import matplotlib.pyplot as plt
 import streamlit as st
-import json
 from PIL import Image
-import io
 import cv2
 from streamlit_drawable_canvas import st_canvas
 
@@ -32,231 +30,175 @@ if 'last_saved_slice' not in st.session_state:
 # ——— Sidebar controls ———————————————————————————————————
 st.title("🩻 Axial CT + Annotation Viewer")
 
-# Help text in sidebar
 st.sidebar.markdown("""
 ### Annotation Guide
 1. Choose annotation mode:
-   - Free Draw: Draw freely on the image
-   - Polygon: Click points to create a polygon
-   - Rectangle: Click and drag to create a rectangle
-2. Adjust brush size as needed
-3. Click 'Save Annotation' to store your work
-4. Use 'Clear Canvas' to start over
-5. Adjust annotation opacity to see the CT scan better
-
-**Tips:**
-- Use larger brush sizes for rough outlines
-- Use smaller brush sizes for fine details
-- You can combine different annotation modes
-- Saved annotations are shown in red
-- Current drawing is shown in green
+   - Free Draw: Draw freely
+   - Polygon: Click to create a polygon
+   - Rectangle: Drag to create a rectangle
+2. Adjust brush size
+3. Click 'Save Annotation'
+4. 'Clear Canvas' to reset
+5. Adjust opacity to view underlying CT
 """)
 
-# Get list of annotated slices
+# List annotated slices
 annotated_slices = sorted([
-    int(f.name.split('_')[-1].split('.')[0])
-    for f in ANNOT_DIR.glob("annotation_slice_*.npy")
+    int(p.name.split('_')[-1].split('.')[0])
+    for p in ANNOT_DIR.glob("annotation_slice_*.npy")
 ])
 
-# Navigation controls
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    if st.button("← Previous Annotated"):
+# Navigation
+col_pr, col_nx = st.sidebar.columns(2)
+with col_pr:
+    if st.button("← Previous"):  
         if annotated_slices:
-            current_idx = annotated_slices.index(st.session_state.slice_idx) if st.session_state.slice_idx in annotated_slices else 0
-            new_idx = (current_idx - 1) % len(annotated_slices)
-            st.session_state.slice_idx = annotated_slices[new_idx]
-            st.session_state.canvas_key = str(np.random.randint(0, 1000000))
+            idx_list = annotated_slices
+            ci = idx_list.index(st.session_state.slice_idx) if st.session_state.slice_idx in idx_list else 0
+            st.session_state.slice_idx = idx_list[(ci-1) % len(idx_list)]
+            st.session_state.canvas_key = str(np.random.randint(0, 1e6))
             st.rerun()
-with col2:
-    if st.button("Next Annotated →"):
+with col_nx:
+    if st.button("Next →"):
         if annotated_slices:
-            current_idx = annotated_slices.index(st.session_state.slice_idx) if st.session_state.slice_idx in annotated_slices else 0
-            new_idx = (current_idx + 1) % len(annotated_slices)
-            st.session_state.slice_idx = annotated_slices[new_idx]
-            st.session_state.canvas_key = str(np.random.randint(0, 1000000))
+            idx_list = annotated_slices
+            ci = idx_list.index(st.session_state.slice_idx) if st.session_state.slice_idx in idx_list else 0
+            st.session_state.slice_idx = idx_list[(ci+1) % len(idx_list)]
+            st.session_state.canvas_key = str(np.random.randint(0, 1e6))
             st.rerun()
 
-# Show annotated slices in sidebar
 if annotated_slices:
     st.sidebar.markdown("### Annotated Slices")
-    for idx in annotated_slices:
-        if st.sidebar.button(f"Slice {idx}", key=f"slice_{idx}"):
-            st.session_state.slice_idx = idx
-            st.session_state.canvas_key = str(np.random.randint(0, 1000000))
+    for s in annotated_slices:
+        if st.sidebar.button(f"Slice {s}", key=f"slice_{s}"):
+            st.session_state.slice_idx = s
+            st.session_state.canvas_key = str(np.random.randint(0, 1e6))
             st.rerun()
 
-# Annotation mode selection
-annotation_mode = st.sidebar.radio(
-    "Annotation Mode",
-    ["Free Draw", "Polygon", "Rectangle"],
-    index=0
-)
+# Mode, slice, window, overlays
+annotation_mode = st.sidebar.radio("Mode", ["Free Draw","Polygon","Rectangle"], index=0)
+st.session_state.slice_idx = st.sidebar.slider("Slice Z",0,nz-1,st.session_state.slice_idx)
+vmin = st.sidebar.slider("Window Min", float(ct_vol.min()), float(ct_vol.max()), float(np.percentile(ct_vol,1)))
+vmax = st.sidebar.slider("Window Max", float(ct_vol.min()), float(ct_vol.max()), float(np.percentile(ct_vol,99)))
+opacity = st.sidebar.slider("Annotation Opacity",0.0,1.0,0.5)
+seg_files = sorted(SEG_DIR.glob("*.nii.gz"))
+overlays = [p.name[:-7] for p in seg_files]
+over_choice = st.sidebar.multiselect("Overlay masks", overlays)
 
-slice_idx = st.sidebar.slider("Axial slice (Z)", 0, nz - 1, st.session_state.slice_idx)
-st.session_state.slice_idx = slice_idx  # Update session state
+# Prepare slice image
+slice_data = ct_vol[:,:,st.session_state.slice_idx]
+slice_norm = np.clip((slice_data - vmin)/(vmax-vmin),0,1)
+slice_img = (slice_norm*255).astype(np.uint8)
+slice_pil = Image.fromarray(slice_img)
 
-vmin = st.sidebar.slider(
-    "Window Min",
-    float(ct_vol.min()),
-    float(ct_vol.max()),
-    float(np.percentile(ct_vol, 1)),
-)
-vmax = st.sidebar.slider(
-    "Window Max",
-    float(ct_vol.min()),
-    float(ct_vol.max()),
-    float(np.percentile(ct_vol, 99)),
-)
-
-# Annotation opacity control
-annotation_opacity = st.sidebar.slider(
-    "Annotation Opacity",
-    0.0, 1.0, 0.5,
-    help="Adjust how visible the annotations are on the CT scan"
-)
-
-# List available masks by stripping the full ".nii.gz" suffix
-seg_files  = sorted(SEG_DIR.glob("*.nii.gz"))
-mask_names = [p.name[:-len(".nii.gz")] for p in seg_files]
-overlay    = st.sidebar.multiselect("Overlay masks", mask_names)
-
-st.sidebar.markdown(f"**Volume shape:** {ct_vol.shape}")
-
-# ——— Prepare the axial slice —————————————————————————————
-slice_raw  = ct_vol[:, :, slice_idx]
-slice_norm = np.clip((slice_raw - vmin) / (vmax - vmin), 0, 1).T
-
-# Convert to PIL Image for canvas
-slice_pil = Image.fromarray((slice_norm * 255).astype(np.uint8))
-
-# ——— Drawing Canvas —————————————————————————————————————
-brush_size = st.slider("Brush Size", 1, 50, 10)
-
-# Map annotation mode to canvas drawing mode
-drawing_mode = {
-    "Free Draw": "freedraw",
-    "Polygon": "polygon",
-    "Rectangle": "rect"
-}[annotation_mode]
-
-# Create a canvas with specific dimensions
-canvas_result = st_canvas(
-    fill_color="rgba(255, 0, 0, 0.3)",
-    stroke_width=brush_size,
-    stroke_color="rgba(255, 0, 0, 1)",
+# Canvas
+brush = st.sidebar.slider("Brush Size",1,50,10)
+drawing_mode = {"Free Draw":"freedraw","Polygon":"polygon","Rectangle":"rect"}[annotation_mode]
+canvas = st_canvas(
+    fill_color="rgba(255,0,0,0.3)",
+    stroke_width=brush,
+    stroke_color="rgba(255,0,0,1)",
     background_image=slice_pil,
     drawing_mode=drawing_mode,
-    height=slice_norm.shape[0],
-    width=slice_norm.shape[1],
-    key=st.session_state.canvas_key,
+    height=slice_img.shape[0],
+    width=slice_img.shape[1],
+    key=st.session_state.canvas_key
 )
 
-# ——— Save Annotation —————————————————————————————————————
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("Save Annotation"):
-        if canvas_result.json_data is not None:
-            # Convert canvas to binary mask
-            mask = np.zeros_like(slice_norm, dtype=np.uint8)
-            
-            # Process each object in the canvas
-            for obj in canvas_result.json_data["objects"]:
-                if obj["type"] == "path":
-                    # For free drawing, create a continuous line
-                    points = obj["path"]
-                    if len(points) >= 2:
-                        points = np.array(points, dtype=np.int32)
-                        cv2.polylines(mask, [points], False, 1, brush_size)
-                elif obj["type"] in ["polygon", "rect"]:
-                    # For polygon and rectangle, fill the area
-                    if "points" in obj:
-                        points = obj["points"]
-                        if len(points) >= 3:
-                            points = np.array(points, dtype=np.int32)
-                            cv2.fillPoly(mask, [points], 1)
-            
-            # Apply morphological operations to clean up the mask
-            kernel = np.ones((3,3), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            
-            # Save as .npy
-            save_path = ANNOT_DIR / f"annotation_slice_{slice_idx}.npy"
-            np.save(save_path, mask)
-            st.success(f"Annotation saved to {save_path}")
-            
-            # Update last saved slice
-            st.session_state.last_saved_slice = slice_idx
-            
-            # Move to next slice
-            if slice_idx < nz - 1:
-                st.session_state.slice_idx = slice_idx + 1
-                st.session_state.canvas_key = str(np.random.randint(0, 1000000))
-                st.rerun()
-
-with col2:
+# Save / Clear
+c1,c2 = st.columns(2)
+with c1:
+    if st.button("Save Annotation") and canvas.json_data:
+        mask = np.zeros(slice_img.shape, dtype=np.uint8)
+        for obj in canvas.json_data["objects"]:
+            t = obj.get("type")
+            if t == "path":
+                pts = np.array(obj.get("path",[]),dtype=np.int32)
+                if pts.shape[0]>1:
+                    cv2.polylines(mask,[pts],False,1,brush)
+            elif t == "polygon":
+                pts = np.array(obj.get("points",[]),dtype=np.int32)
+                if pts.shape[0]>=3:
+                    cv2.fillPoly(mask,[pts],1)
+            elif t == "rect":
+                x=int(obj["left"]); y=int(obj["top"])
+                w=int(obj["width"]); h=int(obj["height"])
+                cv2.rectangle(mask,(x,y),(x+w,y+h),1,-1)
+        mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
+        outp = ANNOT_DIR / f"annotation_slice_{st.session_state.slice_idx}.npy"
+        np.save(outp,mask)
+        st.success(f"Saved {outp.name}")
+        st.session_state.last_saved_slice = st.session_state.slice_idx
+        if st.session_state.slice_idx < nz-1:
+            st.session_state.slice_idx +=1
+            st.session_state.canvas_key = str(np.random.randint(0,1e6))
+            st.rerun()
+with c2:
     if st.button("Clear Canvas"):
-        st.session_state.canvas_key = str(np.random.randint(0, 1000000))
+        st.session_state.canvas_key = str(np.random.randint(0,1e6))
         st.rerun()
 
-# ——— Plot —————————————————————————————————————————————
-fig, ax = plt.subplots(figsize=(6, 6))
-ax.imshow(slice_norm, cmap="gray", origin="lower")
+# Plotting
+fig, ax = plt.subplots(figsize=(6,6))
+ax.imshow(slice_norm, cmap='gray', origin='upper')
 
-# Show saved annotation if exists
-annot_path = ANNOT_DIR / f"annotation_slice_{slice_idx}.npy"
-if annot_path.exists():
-    saved_mask = np.load(annot_path)
-    # Create a colored overlay for the annotation
-    annotation_overlay = np.zeros((*saved_mask.shape, 4))
-    annotation_overlay[saved_mask > 0] = [1, 0, 0, annotation_opacity]  # Red with adjustable opacity
-    ax.imshow(annotation_overlay, origin="lower")
+# saved annotation
+ap = ANNOT_DIR/f"annotation_slice_{st.session_state.slice_idx}.npy"
+if ap.exists():
+    sm = np.load(ap)
+    ao = np.zeros((*sm.shape,4))
+    ao[sm>0] = [1,0,0,opacity]
+    ax.imshow(ao,origin='upper')
 
-# Show current canvas drawing if any
-if canvas_result.json_data is not None:
-    current_mask = np.zeros_like(slice_norm, dtype=np.uint8)
+# current drawing
+if canvas.json_data and 'objects' in canvas.json_data:
+    cm = np.zeros(slice_img.shape,dtype=np.uint8)
+    for obj in canvas.json_data['objects']:
+        try:
+            t = obj.get('type')
+            if t == 'path':
+                pts = np.array(obj.get('path',[]),dtype=np.int32)
+                if len(pts) >= 2:
+                    cv2.polylines(cm,[pts],False,1,brush)
+            elif t == 'polygon':
+                pts = np.array(obj.get('points',[]),dtype=np.int32)
+                if len(pts) >= 3:
+                    cv2.fillPoly(cm,[pts],1)
+            elif t == 'rect':
+                x = int(obj.get('left',0))
+                y = int(obj.get('top',0))
+                w = int(obj.get('width',0))
+                h = int(obj.get('height',0))
+                if w > 0 and h > 0:
+                    cv2.rectangle(cm,(x,y),(x+w,y+h),1,-1)
+        except Exception as e:
+            st.warning(f"Error processing drawing object: {str(e)}")
+            continue
     
-    # Process each object in the canvas
-    for obj in canvas_result.json_data["objects"]:
-        if obj["type"] == "path":
-            # For free drawing, create a continuous line
-            points = obj["path"]
-            if len(points) >= 2:
-                points = np.array(points, dtype=np.int32)
-                cv2.polylines(current_mask, [points], False, 1, brush_size)
-        elif obj["type"] in ["polygon", "rect"]:
-            # For polygon and rectangle, fill the area
-            if "points" in obj:
-                points = obj["points"]
-                if len(points) >= 3:
-                    points = np.array(points, dtype=np.int32)
-                    cv2.fillPoly(current_mask, [points], 1)
+    # Clean up the mask
+    cm = cv2.morphologyEx(cm,cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
     
-    # Apply morphological operations to clean up the mask
-    kernel = np.ones((3,3), np.uint8)
-    current_mask = cv2.morphologyEx(current_mask, cv2.MORPH_CLOSE, kernel)
-    
-    # Show current drawing with a different color
-    current_overlay = np.zeros((*current_mask.shape, 4))
-    current_overlay[current_mask > 0] = [0, 1, 0, annotation_opacity]  # Green with adjustable opacity
-    ax.imshow(current_overlay, origin="lower")
+    # Create overlay
+    co = np.zeros((*cm.shape,4))
+    co[cm>0] = [0,1,0,opacity]  # Green for current drawing
+    ax.imshow(co,origin='upper')
 
-# Show overlay masks
-for name in overlay:
-    mask_path = SEG_DIR / f"{name}.nii.gz"
-    mask_vol  = nib.load(str(mask_path)).get_fdata()
-    mask_slice = mask_vol[:, :, slice_idx].T
-    mask_overlay = np.zeros((*mask_slice.shape, 4))
-    mask_overlay[mask_slice > 0] = [0, 0, 1, 0.3]  # Blue with fixed opacity
-    ax.imshow(mask_overlay, origin="lower")
+# overlays
+for name in over_choice:
+    try:
+        mv = nib.load(str(SEG_DIR/f"{name}.nii.gz")).get_fdata()[:,:,st.session_state.slice_idx]
+        mo = np.zeros((*mv.shape,4))
+        mo[mv>0] = [0,0,1,0.3]  # Blue for overlays
+        ax.imshow(mo,origin='upper')
+    except Exception as e:
+        st.warning(f"Error loading overlay {name}: {str(e)}")
 
-# Add status text
-status_text = f"Axial slice {slice_idx}"
-if slice_idx in annotated_slices:
-    status_text += " (annotated)"
-if slice_idx == st.session_state.last_saved_slice:
-    status_text += " (last saved)"
-ax.set_title(status_text)
-ax.axis("off")
-
-st.pyplot(fig, use_container_width=True)
+# title/status
+status = f"Slice {st.session_state.slice_idx}"
+if st.session_state.slice_idx in annotated_slices:
+    status += " (annotated)"
+if st.session_state.slice_idx == st.session_state.last_saved_slice:
+    status += " (last saved)"
+ax.set_title(status)
+ax.axis('off')
+st.pyplot(fig,use_container_width=True)
