@@ -9,3 +9,5 @@ nninteractive
 napari
 torch
 torchvision
+huggingface-hub
+git+https://github.com/bowang-lab/MedSAM2.git

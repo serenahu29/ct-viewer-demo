@@ -7,6 +7,7 @@ import streamlit as st
 from PIL import Image
 import cv2
 from streamlit_drawable_canvas import st_canvas
+from medsam2_utils import load_medsam2_model, segment_volume
 
 # ——— Paths —————————————————————————————————————————————
 BASE_DIR = pathlib.Path(__file__).parent
@@ -85,6 +86,13 @@ opac = st.sidebar.slider("Annotation Opacity", 0.0, 1.0, 0.5)
 # Load masks list once
 seg_names = sorted(p.stem for p in SEG_DIR.glob("*.nii.gz"))
 overlays = st.sidebar.multiselect("Overlay masks", seg_names)
+if st.sidebar.button("Run luna25medsam2"):
+    with st.spinner("Running segmentation..."):
+        mask_vol = segment_volume(ct_vol)
+        out_path = SEG_DIR / "luna25medsam2.nii.gz"
+        nib.save(nib.Nifti1Image(mask_vol.astype(np.uint8), np.eye(4)), str(out_path))
+    st.success(f"Saved {out_path.name}")
+    st.rerun()
 
 # Prepare image slice
 slice_raw = ct_vol[:, :, st.session_state.slice_idx]
