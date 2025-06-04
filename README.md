@@ -49,6 +49,7 @@ To run the viewer locally:
    ```bash
    pip install -r requirements.txt
    ```
+   The first run will download the MedSAM2 model weights (~150 MB) automatically.
 3. Run the app
    ```bash
    streamlit run app.py
@@ -67,6 +68,7 @@ To run the viewer locally:
 - Use the **Axial slice** slider to navigate through the CT volume.
 - Adjust **Window Min** and **Window Max** to fine‑tune brightness and contrast.
 - Select one or more **Overlay masks** from the multiselect dropdown to see per‑voxel annotations.
+- Click **Run luna25medsam2** in the sidebar to automatically segment the CT volume. The resulting mask is saved to `segmentations/luna25medsam2.nii.gz` and can be toggled like any other overlay.
 
 
 ## Deployment
